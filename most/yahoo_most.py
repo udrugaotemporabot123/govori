@@ -89,9 +89,7 @@ def main():
         fwd["From"] = USER
         fwd["To"] = TO
         fwd["Subject"] = dec(orig.get("Subject")) or "(bez predmeta)"
-        rt = dec(orig.get("Reply-To")) or frm
-        if rt:
-            fwd["Reply-To"] = rt
+        # Yahoo SMTP odbija Reply-To koji nije Vesnina adresa; pošiljatelj je u tijelu (YAHOO-OD)
         fwd["X-Yahoo-Most"] = "1"
         body = (
             f"YAHOO-OD: {frm}\n"
@@ -103,7 +101,13 @@ def main():
         )
         fwd.set_content(body)
         fwd.add_attachment(raw, maintype="message", subtype="rfc822", filename="original.eml") if len(raw) < 15_000_000 else None
-        smtp.send_message(fwd)
+        try:
+            smtp.send_message(fwd)
+        except smtplib.SMTPException as e:
+            print(f"UID {uid} nije proslijeđen: {e}")
+            state["last_uid"] = uid - 1
+            save(state)
+            raise
         sent += 1
         time.sleep(1)
     smtp.quit(); imap.logout()
