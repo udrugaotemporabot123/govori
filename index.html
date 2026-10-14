@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="hr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Govori — O Tempora</title>
+<style>
+/* Mali prozor koji Vesnina ploča otvara na „Govori”. Mikrofon radi ovdje jer je ovo zasebna stranica, a ne okvir unutar claude.ai. Tekst vraća ploči preko window.opener.postMessage. */
+:root{--bg:#F4F7F7;--surface:#fff;--ink:#13262B;--muted:#4A5F65;--line:#CFDBDC;--petrol:#1F4E5A;--send:#2E7D32;--warn:#9A4A12;--warn-soft:#FBEDE2;--soft:#E3EEF0}
+@media (prefers-color-scheme:dark){:root{--bg:#0E1A1D;--surface:#16272C;--ink:#EEF4F3;--muted:#A8BDC0;--line:#2C444A;--petrol:#86C6D2;--send:#5DB462;--warn:#F2A877;--warn-soft:#3A2618;--soft:#1D363C}}
+*{box-sizing:border-box}
+html{font-size:21px}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:"Atkinson Hyperlegible",Verdana,"Segoe UI",system-ui,sans-serif;line-height:1.5}
+.wrap{max-width:560px;margin:0 auto;padding:16px;display:flex;flex-direction:column;gap:14px;min-height:100vh}
+h1{font-size:1.25rem;margin:0}
+.za{color:var(--muted);font-size:.9rem;margin:0}
+#mic{width:9rem;height:9rem;border-radius:50%;border:none;align-self:center;background:var(--petrol);color:var(--bg);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;font:inherit;font-weight:700;cursor:pointer}
+#mic svg{width:3.4rem;height:3.4rem}
+#mic.live{background:#B34A1E;color:#fff;animation:p 1.4s ease-in-out infinite}
+@keyframes p{50%{box-shadow:0 0 0 14px rgba(179,74,30,.18)}}
+@media (prefers-reduced-motion:reduce){#mic.live{animation:none}}
+#hint{text-align:center;font-weight:700;margin:0;min-height:1.5em}
+textarea{width:100%;min-height:7rem;border:2px solid var(--petrol);border-radius:12px;padding:.7rem;font:inherit;background:var(--surface);color:var(--ink)}
+.row{display:flex;gap:10px;flex-wrap:wrap}
+.btn{flex:1 1 auto;border-radius:14px;padding:.8rem 1rem;font:inherit;font-weight:700;border:2px solid transparent;cursor:pointer}
+.go{background:var(--send);color:#fff}
+.plain{background:var(--surface);color:var(--petrol);border-color:var(--petrol)}
+.btn[disabled]{opacity:.5;cursor:default}
+.note{border-radius:12px;padding:.7rem .9rem;font-size:.9rem;background:var(--soft)}
+.note.err{background:var(--warn-soft)}
+[hidden]{display:none!important}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Govorite, ja pišem</h1>
+  <p class="za" id="za"></p>
+  <button id="mic" type="button" aria-label="Počni govoriti">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21"/></svg>
+    <span id="miclabel">Govori</span>
+  </button>
+  <p id="hint">Stisnite krug i govorite.</p>
+  <textarea id="text" aria-label="Izgovoreni tekst" placeholder="Ovdje se pojavljuje ono što kažete. Možete i ispraviti rukom."></textarea>
+  <div class="row">
+    <button class="btn go" id="send" type="button" disabled>Gotovo, upiši na ploču</button>
+  </div>
+  <div class="row">
+    <button class="btn plain" id="clear" type="button">Obriši i kreni ispočetka</button>
+  </div>
+  <div id="note"></div>
+</div>
+<script>
+(() => {
+  const $ = (id) => document.getElementById(id);
+  const q = new URLSearchParams(location.search);
+  const polje = q.get("polje") || "";
+  if (q.get("za")) $("za").textContent = "Za: " + q.get("za");
+  const ta = $("text"), mic = $("mic"), label = $("miclabel"), hint = $("hint"), send = $("send");
+  const say = (text, err) => { $("note").replaceChildren(); if (text){ const d = document.createElement("div"); d.className = "note" + (err ? " err" : ""); d.textContent = text; $("note").append(d); } };
+  const sync = () => { send.disabled = !ta.value.trim(); };
+  ta.addEventListener("input", sync);
+
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  let rec = null, live = false, base = "";
+  function stopUi(msg){ live = false; mic.classList.remove("live"); label.textContent = "Govori"; mic.setAttribute("aria-label","Počni govoriti"); hint.textContent = msg; sync(); }
+  function start(){
+    if (!SR){ say("Ovaj preglednik ne zna pretvarati govor u tekst. Otvorite ploču u Google Chromeu ili Microsoft Edgeu.", true); return; }
+    base = ta.value.trim() ? ta.value.replace(/\s*$/, " ") : "";
+    rec = new SR(); rec.lang = "hr-HR"; rec.continuous = true; rec.interimResults = true;
+    rec.onresult = (e) => { let t = ""; for (let i = 0; i < e.results.length; i++) t += e.results[i][0].transcript; ta.value = base + t; sync(); };
+    rec.onerror = (e) => {
+      if (e.error === "not-allowed" || e.error === "service-not-allowed") { stopUi(""); say("Preglednik nije dopustio mikrofon. Gore lijevo u adresnoj traci kliknite ikonu (lokot ili mikrofon), uključite Mikrofon i stisnite krug ponovno.", true); }
+      else if (e.error === "audio-capture") { stopUi(""); say("Ne čujem mikrofon. Provjerite je li mikrofon uključen i spojen.", true); }
+      else if (e.error === "network") { stopUi(""); say("Nema veze s internetom za prepoznavanje govora. Pokušajte ponovno za koji trenutak.", true); }
+    };
+    // Chrome sam stane nakon tišine; dok je krug crven, nastavljamo slušati.
+    rec.onend = () => { if (live){ base = ta.value.trim() ? ta.value.replace(/\s*$/, " ") : ""; try{ rec.start(); return; }catch(err){} } stopUi(ta.value.trim() ? "Pročitajte tekst. Ako je dobro, stisnite zeleni gumb." : "Stisnite krug i govorite."); };
+    try{ rec.start(); }catch(err){ say("Mikrofon se nije upalio. Stisnite krug ponovno.", true); return; }
+    live = true; say(""); mic.classList.add("live"); label.textContent = "Stop"; mic.setAttribute("aria-label","Zaustavi"); hint.textContent = "Slušam… govorite. Stisnite krug kad završite.";
+  }
+  function stop(){ live = false; if (rec) try{ rec.stop(); }catch(e){} }
+  mic.addEventListener("click", () => live ? stop() : start());
+  $("clear").addEventListener("click", () => { ta.value = ""; base = ""; sync(); ta.focus(); });
+
+  send.addEventListener("click", async () => {
+    stop();
+    const text = ta.value.trim(); if (!text) return;
+    if (window.opener && !window.opener.closed){
+      try{
+        window.opener.postMessage({type: "otempora-glas", polje, text}, "*");
+        hint.textContent = "Upisano na ploču."; say("Upisano. Ovaj prozor se sad zatvara.");
+        setTimeout(() => window.close(), 900);
+        return;
+      }catch(e){}
+    }
+    // Nema veze s pločom: tekst ide u međuspremnik pa ga Vesna zalijepi.
+    try{ await navigator.clipboard.writeText(text); say("Tekst je kopiran. Vratite se na ploču, kliknite u polje i pritisnite Ctrl + V (na Macu Cmd + V)."); }
+    catch(e){ ta.select(); say("Označio sam tekst. Pritisnite Ctrl + C, vratite se na ploču, kliknite u polje i pritisnite Ctrl + V.", true); }
+  });
+
+  if (!SR) say("Ovaj preglednik ne zna pretvarati govor u tekst. Otvorite ploču u Google Chromeu ili Microsoft Edgeu.", true);
+  else start(); // odmah sluša; ako preglednik traži dopuštenje, pita sad
+})();
+</script>
+</body>
+</html>
