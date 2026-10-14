@@ -37,6 +37,7 @@ textarea{width:100%;min-height:7rem;border:2px solid var(--petrol);border-radius
 <body>
 <div class="wrap">
   <h1>Govorite, ja pišem</h1>
+  <p class="za">Ovaj prozor može stajati sa strane ploče.</p>
   <p class="za" id="za"></p>
   <button id="mic" type="button" aria-label="Počni govoriti">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21"/></svg>
@@ -113,8 +114,9 @@ textarea{width:100%;min-height:7rem;border:2px solid var(--petrol);border-radius
     if (window.opener && !window.opener.closed){
       try{
         window.opener.postMessage({type: "otempora-glas", polje, text}, "*");
-        hint.textContent = "Upisano na ploču."; say("Upisano. Ovaj prozor se sad zatvara.");
-        setTimeout(() => window.close(), 900);
+        ta.value = ""; base = ""; sync();
+        hint.textContent = "✓ Upisano na ploču.";
+        say("Upisano na ploču. Prozor može ostati otvoren: kad idući put stisnete Govori na ploči, nastavljate ovdje.");
         return;
       }catch(e){}
     }
