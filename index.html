@@ -29,6 +29,9 @@ textarea{width:100%;min-height:7rem;border:2px solid var(--petrol);border-radius
 .note{border-radius:12px;padding:.7rem .9rem;font-size:.9rem;background:var(--soft)}
 .note.err{background:var(--warn-soft)}
 [hidden]{display:none!important}
+.meter{height:12px;border-radius:6px;background:var(--line);overflow:hidden}
+#lvl{height:100%;width:0;background:var(--send);transition:width .08s}
+.diag{color:var(--muted);font-size:.75rem;margin:0;text-align:center;min-height:1.2em}
 </style>
 </head>
 <body>
@@ -40,6 +43,8 @@ textarea{width:100%;min-height:7rem;border:2px solid var(--petrol);border-radius
     <span id="miclabel">Govori</span>
   </button>
   <p id="hint">Stisnite krug i govorite.</p>
+  <div class="meter" aria-hidden="true"><div id="lvl"></div></div>
+  <p class="diag" id="diag"></p>
   <textarea id="text" aria-label="Izgovoreni tekst" placeholder="Ovdje se pojavljuje ono što kažete. Možete i ispraviti rukom."></textarea>
   <div class="row">
     <button class="btn go" id="send" type="button" disabled>Gotovo, upiši na ploču</button>
@@ -63,12 +68,32 @@ textarea{width:100%;min-height:7rem;border:2px solid var(--petrol);border-radius
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
   let rec = null, live = false, base = "";
   function stopUi(msg){ live = false; mic.classList.remove("live"); label.textContent = "Govori"; mic.setAttribute("aria-label","Počni govoriti"); hint.textContent = msg; sync(); }
+  // Dijagnostika: traka pokazuje čuje li preglednik mikrofon, sitni red ispod što prepoznavanje radi.
+  const diag = (t) => { $("diag").textContent = t; };
+  let meterOn = false;
+  async function meter(){
+    if (meterOn || !navigator.mediaDevices) return; meterOn = true;
+    try{
+      const stream = await navigator.mediaDevices.getUserMedia({audio:true});
+      const ac = new (window.AudioContext || window.webkitAudioContext)();
+      const an = ac.createAnalyser(); an.fftSize = 512; ac.createMediaStreamSource(stream).connect(an);
+      const buf = new Uint8Array(an.fftSize);
+      const tick = () => { an.getByteTimeDomainData(buf); let m = 0; for (const v of buf) m = Math.max(m, Math.abs(v - 128)); $("lvl").style.width = Math.min(100, m * 1.6) + "%"; requestAnimationFrame(tick); };
+      tick();
+    }catch(e){ meterOn = false; diag("Mikrofon: " + (e.name || e.message)); }
+  }
   function start(){
+    meter();
     if (!SR){ say("Ovaj preglednik ne zna pretvarati govor u tekst. Otvorite ploču u Google Chromeu ili Microsoft Edgeu.", true); return; }
     base = ta.value.trim() ? ta.value.replace(/\s*$/, " ") : "";
     rec = new SR(); rec.lang = "hr-HR"; rec.continuous = true; rec.interimResults = true;
+    rec.onstart = () => diag("prepoznavanje: pokrenuto");
+    rec.onaudiostart = () => diag("prepoznavanje: čujem mikrofon");
+    rec.onspeechstart = () => diag("prepoznavanje: čujem govor");
+    rec.onnomatch = () => diag("prepoznavanje: nisam razumio");
     rec.onresult = (e) => { let t = ""; for (let i = 0; i < e.results.length; i++) t += e.results[i][0].transcript; ta.value = base + t; sync(); };
     rec.onerror = (e) => {
+      diag("prepoznavanje: greška " + e.error);
       if (e.error === "not-allowed" || e.error === "service-not-allowed") { stopUi(""); say("Preglednik nije dopustio mikrofon. Gore lijevo u adresnoj traci kliknite ikonu (lokot ili mikrofon), uključite Mikrofon i stisnite krug ponovno.", true); }
       else if (e.error === "audio-capture") { stopUi(""); say("Ne čujem mikrofon. Provjerite je li mikrofon uključen i spojen.", true); }
       else if (e.error === "network") { stopUi(""); say("Nema veze s internetom za prepoznavanje govora. Pokušajte ponovno za koji trenutak.", true); }
@@ -99,7 +124,7 @@ textarea{width:100%;min-height:7rem;border:2px solid var(--petrol);border-radius
   });
 
   if (!SR) say("Ovaj preglednik ne zna pretvarati govor u tekst. Otvorite ploču u Google Chromeu ili Microsoft Edgeu.", true);
-  else start(); // odmah sluša; ako preglednik traži dopuštenje, pita sad
+  else hint.textContent = "Stisnite veliki krug i govorite.";
 })();
 </script>
 </body>
