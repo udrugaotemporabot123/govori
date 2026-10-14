@@ -125,6 +125,38 @@ textarea{width:100%;min-height:7rem;border:2px solid var(--petrol);border-radius
     catch(e){ ta.select(); say("Označio sam tekst. Pritisnite Ctrl + C, vratite se na ploču, kliknite u polje i pritisnite Ctrl + V.", true); }
   });
 
+  // Rad u pozadini: ploča šalje "start"/"stop" dok Vesna drži tipku, a ovaj prozor vraća tekst dok ona govori.
+  const board = window.opener;
+  const tell = (m) => { try{ board && !board.closed && board.postMessage(m, "*"); }catch(e){} };
+  let remote = null, remoteOn = false, remotePolje = "", remoteBase = "";
+  function remoteStart(p){
+    if (!SR){ tell({type:"otempora-err", polje:p, error:"no-sr"}); return; }
+    remotePolje = p; remoteOn = true; remoteBase = "";
+    if (remote) try{ remote.abort(); }catch(e){}
+    const r = new SR(); remote = r; r.lang = "hr-HR"; r.continuous = true; r.interimResults = true;
+    r.onstart = () => { diag("pozadina: slušam za ploču"); tell({type:"otempora-listening", polje:remotePolje}); };
+    r.onresult = (e) => { let t = ""; for (let i = 0; i < e.results.length; i++) t += e.results[i][0].transcript; tell({type:"otempora-live", polje:remotePolje, text: remoteBase + t}); remote.last = remoteBase + t; };
+    r.onerror = (e) => { diag("pozadina: greška " + e.error); if (e.error !== "no-speech" && e.error !== "aborted") tell({type:"otempora-err", polje:remotePolje, error:e.error}); };
+    r.onend = () => {
+      if (remoteOn && remote === r){ remoteBase = (r.last || remoteBase) ? (r.last || remoteBase).replace(/\s*$/," ") : ""; try{ r.start(); return; }catch(err){} }
+      if (remote === r){ tell({type:"otempora-done", polje:remotePolje, text:(r.last || remoteBase).trim()}); diag("pozadina: gotovo"); }
+    };
+    try{ r.start(); }catch(e){ tell({type:"otempora-err", polje:p, error:"start"}); }
+  }
+  window.addEventListener("message", (e) => {
+    if (!board || e.source !== board) return;
+    const d = e.data || {};
+    if (d.type !== "otempora-cmd") return;
+    if (d.cmd === "ping") tell({type:"otempora-ready"});
+    else if (d.cmd === "start") remoteStart(String(d.polje||""));
+    else if (d.cmd === "stop"){ remoteOn = false; if (remote) try{ remote.stop(); }catch(err){} }
+  });
+  if (board){
+    $("za").textContent = "Ovaj prozor radi u pozadini. Vratite se na ploču: držite tipku Option (⌥) ili Alt, ili držite gumb Govori, i pričajte.";
+    tell({type:"otempora-ready"});
+    setInterval(() => tell({type:"otempora-ready"}), 3000);  // ploča nakon osvježavanja ponovno pronađe ovaj prozor
+  }
+
   if (!SR) say("Ovaj preglednik ne zna pretvarati govor u tekst. Otvorite ploču u Google Chromeu ili Microsoft Edgeu.", true);
   else hint.textContent = "Stisnite veliki krug i govorite.";
 })();
