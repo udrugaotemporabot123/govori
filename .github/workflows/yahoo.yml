@@ -1,7 +1,9 @@
 name: Yahoo most
 on:
   schedule:
-    - cron: "*/5 * * * *"
+    # 10:00 i 16:00 po zagrebačkom vremenu; cron je u UTC pa pokrećemo oba sata,
+    # a korak "Vrijeme" propusti samo onaj koji pada u 10 ili 16 h (ljetno i zimsko)
+    - cron: "0 8,9,14,15 * * *"
   workflow_dispatch:
 concurrency:
   group: yahoo-most
@@ -16,17 +18,26 @@ jobs:
       YAHOO_USER: vesnakrauth@yahoo.com
       YAHOO_APP_PASSWORD: ${{ secrets.YAHOO_APP_PASSWORD }}
     steps:
+      - name: Vrijeme
+        id: vrijeme
+        run: |
+          sat=$(TZ=Europe/Zagreb date +%H)
+          if [ "${{ github.event_name }}" != "schedule" ] || [ "$sat" = "10" ] || [ "$sat" = "16" ]; then
+            echo "radi=1" >> "$GITHUB_OUTPUT"
+          fi
       - uses: actions/checkout@v4
+        if: steps.vrijeme.outputs.radi
       - uses: actions/cache/restore@v4
+        if: steps.vrijeme.outputs.radi
         with:
           path: stanje
           key: yahoo-stanje-${{ github.run_id }}
           restore-keys: yahoo-stanje-
       - name: Prebaci nove Yahoo mailove u Gmail
-        if: ${{ env.YAHOO_APP_PASSWORD != '' }}
+        if: ${{ steps.vrijeme.outputs.radi && env.YAHOO_APP_PASSWORD != '' }}
         run: python3 most/yahoo_most.py
       - uses: actions/cache/save@v4
-        if: always()
+        if: always() && steps.vrijeme.outputs.radi
         with:
           path: stanje
           key: yahoo-stanje-${{ github.run_id }}

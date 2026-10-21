@@ -15,15 +15,17 @@ PASS = os.environ["YAHOO_APP_PASSWORD"]
 TO = os.environ.get("YAHOO_FORWARD_TO", "udruga.otempora+yahoo@gmail.com")
 STATE = os.environ.get("STATE_FILE", "stanje/yahoo.json")
 FIRST_DAYS = 3          # prvi put: samo mailovi iz zadnja 3 dana
-MAX_PER_RUN = 25
+MAX_PER_RUN = 100
 SKIP_FROM = {USER.lower(), "udruga.otempora@gmail.com"}
 
 
 def dec(v):
     try:
-        return str(make_header(decode_header(v or "")))
+        v = str(make_header(decode_header(v or "")))
     except Exception:
-        return v or ""
+        v = v or ""
+    # neki naslovi imaju prijelom reda, a zaglavlje ga ne smije imati
+    return re.sub(r"\s*[\r\n]+\s*", " ", v).strip()
 
 
 def html_to_text(raw):
